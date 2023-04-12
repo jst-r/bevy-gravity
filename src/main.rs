@@ -1,10 +1,11 @@
 //! Shows how to iterate over combinations of query results.
 
+use std::f32::consts::PI;
+
 use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     pbr::AmbientLight,
     prelude::*,
-    transform,
 };
 use rand::{thread_rng, Rng};
 
@@ -22,7 +23,6 @@ fn main() {
         .add_startup_system(generate_bodies)
         .insert_resource(FixedTime::new_from_secs(DELTA_TIME))
         .add_systems((interact_bodies, integrate).in_schedule(CoreSchedule::FixedUpdate))
-        .add_system(look_at_star)
         .insert_resource(ClearColor(Color::BLACK))
         .run();
 }
@@ -60,7 +60,7 @@ fn generate_bodies(
         .unwrap(),
     );
 
-    let color_range = 0.5..1.0;
+    let color_range = 0.9..1.0;
     let vel_range = -0.5..0.5;
 
     let mut rng = thread_rng();
@@ -74,8 +74,13 @@ fn generate_bodies(
             rng.gen_range(-1.0..1.0),
         )
         .normalize()
+            * (Vec3 {
+                x: 1.,
+                y: 0.1,
+                z: 1.,
+            })
             * rng.gen_range(0.2f32..1.0).cbrt()
-            * 15.;
+            * 100.;
 
         commands.spawn(BodyBundle {
             pbr: PbrBundle {
@@ -86,11 +91,15 @@ fn generate_bodies(
                 },
                 mesh: mesh.clone(),
                 material: materials.add(
-                    Color::rgb(
-                        rng.gen_range(color_range.clone()),
-                        rng.gen_range(color_range.clone()),
-                        rng.gen_range(color_range.clone()),
-                    )
+                    StandardMaterial {
+                        base_color: Color::rgb(
+                            rng.gen_range(color_range.clone()),
+                            rng.gen_range(color_range.clone()),
+                            rng.gen_range(color_range.clone()),
+                        ),
+                        emissive: Color::WHITE,
+                        ..default()
+                    }
                     .into(),
                 ),
                 ..default()
@@ -108,70 +117,30 @@ fn generate_bodies(
         });
     }
 
-    // add bigger "star" body in the center
-    let star_radius = 1.;
-    commands
-        .spawn((
-            BodyBundle {
-                pbr: PbrBundle {
-                    transform: Transform::from_scale(Vec3::splat(star_radius)),
-                    mesh: meshes.add(
-                        Mesh::try_from(shape::Icosphere {
-                            radius: 1.0,
-                            subdivisions: 5,
-                        })
-                        .unwrap(),
-                    ),
-                    material: materials.add(StandardMaterial {
-                        base_color: Color::ORANGE_RED,
-                        emissive: (Color::ORANGE_RED * 2.),
-                        ..default()
-                    }),
-                    ..default()
-                },
-                mass: Mass(500.0),
-                ..default()
-            },
-            Star,
-        ))
-        .with_children(|p| {
-            p.spawn(PointLightBundle {
-                point_light: PointLight {
-                    color: Color::WHITE,
-                    intensity: 400.0,
-                    range: 100.0,
-                    radius: star_radius,
-                    ..default()
-                },
-                ..default()
-            });
-        });
     commands.spawn(Camera3dBundle {
-        transform: Transform::from_xyz(0.0, 10.5, -30.0).looking_at(Vec3::ZERO, Vec3::Y),
+        transform: Transform::from_xyz(0.0, 100.0, -100.0).looking_at(Vec3::ZERO, Vec3::Y),
         ..default()
     });
 }
 
 fn interact_bodies(
-    mut query: Query<(&Mass, &GlobalTransform, &mut Acceleration)>,
+    mut query: Query<(&GlobalTransform, &mut Acceleration)>,
     other: Query<(&Mass, &GlobalTransform)>,
 ) {
-    query
-        .par_iter_mut()
-        .for_each_mut(|(Mass(m1), transform1, mut acc1)| {
-            for (Mass(m2), transform2) in other.iter() {
-                let delta = transform2.translation() - transform1.translation();
-                let distance_sq: f32 = delta.length_squared();
+    query.par_iter_mut().for_each_mut(|(transform1, mut acc1)| {
+        for (Mass(m2), transform2) in other.iter() {
+            let delta = transform2.translation() - transform1.translation();
+            let distance_sq: f32 = delta.length_squared();
 
-                if distance_sq < 0.5 {
-                    continue;
-                }
-
-                let f = GRAVITY_CONSTANT / distance_sq;
-                let force_unit_mass = delta * f;
-                acc1.0 += force_unit_mass * *m2;
+            if distance_sq < 0.5 {
+                continue;
             }
-        });
+
+            let f = GRAVITY_CONSTANT / distance_sq;
+            let force_unit_mass = delta * f;
+            acc1.0 += force_unit_mass * *m2;
+        }
+    });
 }
 
 fn integrate(mut query: Query<(&mut Acceleration, &mut Transform, &mut LastPos)>) {
@@ -185,17 +154,4 @@ fn integrate(mut query: Query<(&mut Acceleration, &mut Transform, &mut LastPos)>
         last_pos.0 = transform.translation;
         transform.translation = new_pos;
     }
-}
-
-fn look_at_star(
-    mut camera: Query<&mut Transform, (With<Camera>, Without<Star>)>,
-    star: Query<&Transform, With<Star>>,
-) {
-    let mut camera = camera.single_mut();
-    let star = star.single();
-    let new_rotation = camera
-        .looking_at(star.translation, Vec3::Y)
-        .rotation
-        .lerp(camera.rotation, 0.1);
-    camera.rotation = new_rotation;
 }
