@@ -28,7 +28,7 @@ fn main() {
 }
 
 const GRAVITY_CONSTANT: f32 = 0.001;
-const NUM_BODIES: usize = 700;
+const NUM_BODIES: usize = 3000;
 
 #[derive(Component, Default)]
 struct Mass(f32);
@@ -162,6 +162,10 @@ fn interact_bodies(
             for (Mass(m2), transform2) in other.iter() {
                 let delta = transform2.translation() - transform1.translation();
                 let distance_sq: f32 = delta.length_squared();
+
+                if distance_sq < 0.5 {
+                    continue;
+                }
 
                 let f = GRAVITY_CONSTANT / distance_sq;
                 let force_unit_mass = delta * f;
