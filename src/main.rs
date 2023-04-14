@@ -38,13 +38,13 @@ fn main() {
         .add_system(pan_orbit_camera)
         .insert_resource(FixedTime::new_from_secs(DELTA_TIME))
         .add_systems((build_tree, interact_bodies_tree, integrate))
-        // .add_systems((draw_boxes,))
+        .add_systems((draw_boxes,))
         .insert_resource(ClearColor(Color::BLACK))
         .run();
 }
 
 const GRAVITY_CONSTANT: f32 = 0.01;
-const NUM_BODIES: usize = 7000;
+const NUM_BODIES: usize = 20000;
 
 #[derive(Component, Default)]
 struct Mass(f32);
@@ -82,7 +82,7 @@ fn generate_bodies(
 
     let mut rng = thread_rng();
     for _ in 0..NUM_BODIES {
-        let radius: f32 = rng.gen_range(0.1..0.7);
+        let radius: f32 = rng.gen_range(0.1..2.0);
         let mass_value = radius.powi(3) * 10.;
 
         let position = Vec3::new(
@@ -90,11 +90,11 @@ fn generate_bodies(
             distribution.sample(&mut rng),
             distribution.sample(&mut rng),
         ) * (Vec3 {
-            x: 1.3,
+            x: 1.5,
             y: 0.3,
             z: 1.0,
-        }) * rng.gen_range(0f32..1.0).sqrt()
-            * 100.;
+        }) * rng.gen_range(0f32..1.0).cbrt()
+            * 300.;
         commands.spawn(BodyBundle {
             pbr: PbrBundle {
                 transform: Transform {
@@ -118,8 +118,8 @@ fn generate_bodies(
                 position
                     + Vec3::cross(Vec3::Y, position).normalize()
                         * DELTA_TIME
-                        * position.length().cbrt()
-                        * rng.gen_range(0.5..1.1),
+                        * position.length().sqrt()
+                        * rng.gen_range(1.0..2.0),
             ),
         });
     }
@@ -151,7 +151,7 @@ fn interact_bodies_tree(
 ) {
     query
         .par_iter_mut()
-        .batching_strategy(BatchingStrategy::new().min_batch_size(128))
+        .batching_strategy(BatchingStrategy::new().min_batch_size(256))
         .for_each_mut(|(transform1, mut acc1)| {
             let tree = match tree.get_single() {
                 Ok(tree) => tree,
@@ -175,7 +175,7 @@ fn interact_bodies_tree(
                             + bbox.max_z
                             - bbox.min_z;
 
-                        if delta / sum_of_sides < 5. {
+                        if delta / sum_of_sides < 1. / 3. {
                             queue.push(&neg);
                             queue.push(&pos);
                             continue;
@@ -285,7 +285,7 @@ fn build_tree(
 }
 
 fn build_tree_impl(mut bodies: Vec<Body>, depth: usize, bbox: shape::Box) -> Tree {
-    if bodies.len() <= 32 {
+    if bodies.len() <= 64 {
         return Tree::Leaf(bodies);
     }
 
@@ -383,7 +383,7 @@ fn draw_boxes(
         match node {
             Tree::Leaf(_) => {}
             Tree::Node { bbox, neg, pos, .. } => {
-                // queue.push(neg);
+                queue.push(neg);
                 queue.push(pos);
                 let mesh = meshes.add((*bbox).into());
                 commands.spawn((
