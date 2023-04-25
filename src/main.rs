@@ -38,7 +38,7 @@ fn main() {
         .add_system(pan_orbit_camera)
         .insert_resource(FixedTime::new_from_secs(DELTA_TIME))
         .add_systems((build_tree, interact_bodies_tree, integrate))
-        .add_systems((draw_boxes,))
+        // .add_systems((draw_boxes,))
         .insert_resource(ClearColor(Color::BLACK))
         .run();
 }
@@ -150,9 +150,9 @@ fn interact_bodies_tree(
     tree: Query<&Tree>,
 ) {
     query
-        .par_iter_mut()
-        .batching_strategy(BatchingStrategy::new().min_batch_size(256))
-        .for_each_mut(|(transform1, mut acc1)| {
+        .iter_mut()
+        // .batching_strategy(BatchingStrategy::new().min_batch_size(256))
+        .for_each(|(transform1, mut acc1)| {
             let tree = match tree.get_single() {
                 Ok(tree) => tree,
                 Err(_) => return,
@@ -175,40 +175,40 @@ fn interact_bodies_tree(
                             + bbox.max_z
                             - bbox.min_z;
 
-                        if delta / sum_of_sides < 1. / 3. {
+                        if delta / sum_of_sides < 1. {
                             queue.push(&neg);
                             queue.push(&pos);
                             continue;
                         }
 
-                        let delta = *center_of_mass - transform1.translation();
-                        let distance_sq: f32 = delta.length_squared();
-
-                        if distance_sq < 0.1 {
-                            continue;
-                        }
-
-                        let f = GRAVITY_CONSTANT / distance_sq;
-                        let force_unit_mass = delta * f;
-                        acc1.0 += force_unit_mass * *mass;
+                        interact_single_body_tree(transform1, center_of_mass, mass, &mut acc1);
                     }
                     Tree::Leaf(bodies) => {
                         for Body(translation2, m2) in bodies {
-                            let delta = *translation2 - transform1.translation();
-                            let distance_sq: f32 = delta.length_squared();
-
-                            if distance_sq < 0.1 {
-                                continue;
-                            }
-
-                            let f = GRAVITY_CONSTANT / distance_sq;
-                            let force_unit_mass = delta * f;
-                            acc1.0 += force_unit_mass * *m2;
+                            interact_single_body_tree(transform1, translation2, m2, &mut acc1);
                         }
                     }
                 }
             }
         });
+}
+
+fn interact_single_body_tree(
+    transform1: &GlobalTransform,
+    translation2: &Vec3,
+    m2: &f32,
+    acc1: &mut Acceleration,
+) {
+    let delta = *translation2 - transform1.translation();
+    let distance_sq: f32 = delta.length_squared();
+
+    if distance_sq < 0.1 {
+        return;
+    }
+
+    let f = GRAVITY_CONSTANT / distance_sq;
+    let force_unit_mass = delta * f;
+    acc1.0 += force_unit_mass * *m2;
 }
 
 #[derive(Debug, Clone, Copy)]
